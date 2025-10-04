@@ -3,8 +3,13 @@ from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
 import secrets
 import smtplib
-from email.mime.text import MimeText
-from email.mime.multipart import MimeMultipart
+try:
+    from email.mime.text import MIMEText as MimeText
+    from email.mime.multipart import MIMEMultipart as MimeMultipart
+except ImportError:
+    # Fallback for older Python versions or different email packages
+    from email.mime.text import MIMEText as MimeText
+    from email.mime.multipart import MIMEMultipart as MimeMultipart
 
 from ..core.database import get_db
 from ..core.security import get_password_hash, verify_password, create_access_token

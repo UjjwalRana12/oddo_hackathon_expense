@@ -1,9 +1,12 @@
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import Optional, List
 import os
 import secrets
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env", extra="ignore")
+    
     # Application settings
     app_name: str = "Expense Reimbursement System"
     debug: bool = False
@@ -14,20 +17,6 @@ class Settings(BaseSettings):
     
     # Database
     database_url: str = "postgresql://username:password@hostname:5432/expense_system"
-    
-    # Security
-    allowed_origins: str = "https://yourdomain.com,https://www.yourdomain.com"
-    allowed_hosts: str = "yourdomain.com,www.yourdomain.com,localhost"
-    
-    @property
-    def allowed_origins_list(self) -> List[str]:
-        if self.allowed_origins == "*":
-            return ["*"]
-        return [origin.strip() for origin in self.allowed_origins.split(',')]
-    
-    @property  
-    def allowed_hosts_list(self) -> List[str]:
-        return [host.strip() for host in self.allowed_hosts.split(',')]
     
     # External APIs
     countries_api_url: str = "https://restcountries.com/v3.1/all?fields=name,currencies"
@@ -53,9 +42,6 @@ class Settings(BaseSettings):
     workers: int = 4
     max_connections: int = 1000
     keepalive: int = 2
-    
-    class Config:
-        env_file = ".env"
 
 # Production-specific settings
 class ProductionSettings(Settings):
@@ -68,8 +54,8 @@ class DevelopmentSettings(Settings):
     debug: bool = True
     environment: str = "development"
     database_url: str = "sqlite:///./expense_system.db"
-    allowed_origins: str = "*"
-    allowed_hosts: str = "localhost,127.0.0.1"
+    cors_origins: str = "*"
+    trusted_hosts: str = "localhost,127.0.0.1"
     log_level: str = "DEBUG"
 
 def get_settings():

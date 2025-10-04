@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -60,17 +59,10 @@ app = FastAPI(
     redoc_url="/redoc" if settings.debug else None,
 )
 
-# Security middleware - Trust only allowed hosts
-if settings.environment == "production":
-    app.add_middleware(
-        TrustedHostMiddleware, 
-        allowed_hosts=settings.allowed_hosts_list
-    )
-
-# CORS middleware with production-safe configuration
+# CORS middleware - Allow all origins for now (can be restricted later)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
+    allow_origins=["*"],  # Allow all origins for simplicity
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
