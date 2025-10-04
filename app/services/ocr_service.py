@@ -145,52 +145,212 @@ class OCRService:
         
         return "Other"
     
-    def process_receipt(self, image_path: str) -> Dict[str, Any]:
-        """Process receipt image and extract structured data"""
+    def extract_expense_form_data(self, text: str) -> Dict[str, Any]:
+        """Extract specific expense form fields from OCR text"""
+        
+        # Initialize result dictionary with all form fields
+        form_data = {
+            "description": None,
+            "expense_date": None,
+            "category": None,
+            "paid_by": None,
+            "total_amount": None,
+            "currency": None,
+            "remarks": None
+        }
+        
+        # Split text into lines for better processing
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        text_lower = text.lower()
+        
+        # Extract Description
+        description_patterns = [
+            r'description[\s:]*([^\n\r]+)',
+            r'desc[\s:]*([^\n\r]+)',
+            r'item[\s:]*([^\n\r]+)',
+            r'expense[\s:]*([^\n\r]+)'
+        ]
+        
+        for pattern in description_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                form_data["description"] = match.group(1).strip()
+                break
+        
+        # Extract Expense Date
+        date_patterns = [
+            r'expense\s+date[\s:]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})',
+            r'date[\s:]*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})',
+            r'(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})',
+            r'(\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{2,4})',
+            r'((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2},?\s+\d{2,4})'
+        ]
+        
+        for pattern in date_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                form_data["expense_date"] = match.group(1).strip()
+                break
+        
+        # Extract Category
+        category_patterns = [
+            r'category[\s:]*([^\n\r]+)',
+            r'cat[\s:]*([^\n\r]+)',
+            r'type[\s:]*([^\n\r]+)'
+        ]
+        
+        for pattern in category_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                form_data["category"] = match.group(1).strip()
+                break
+        
+        # If no explicit category found, try to categorize from content
+        if not form_data["category"]:
+            form_data["category"] = self.categorize_expense(text)
+        
+        # Extract Paid By
+        paid_by_patterns = [
+            r'paid\s+by[\s:]*([^\n\r]+)',
+            r'paidby[\s:]*([^\n\r]+)',
+            r'payment\s+method[\s:]*([^\n\r]+)',
+            r'paid[\s:]*([^\n\r]+)'
+        ]
+        
+        for pattern in paid_by_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                paid_by_text = match.group(1).strip()
+                # Clean up common payment method indicators
+                if any(method in paid_by_text.lower() for method in ['cash', 'card', 'credit', 'debit', 'bank']):
+                    form_data["paid_by"] = paid_by_text
+                break
+        
+        # Extract Total Amount and Currency
+        amount_patterns = [
+            r'total\s+amount[\s:]*(\d+(?:,\d{3})*(?:\.\d{2})?)\s*([a-z]{3})',  # "567 USD"
+            r'total\s+amount[\s:]*([a-z]{3})\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',  # "USD 567"
+            r'amount[\s:]*(\d+(?:,\d{3})*(?:\.\d{2})?)\s*([a-z]{3})',  # "567 USD"
+            r'amount[\s:]*([a-z]{3})\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',  # "USD 567"
+            r'(\d+(?:,\d{3})*(?:\.\d{2})?)\s*([a-z]{3})',  # Generic "567 USD"
+            r'([a-z]{3})\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',  # Generic "USD 567"
+            r'[\$£€¥₹]\s*(\d+(?:,\d{3})*(?:\.\d{2})?)',  # Symbol-based currencies
+            r'(\d+(?:,\d{3})*\.\d{2})'  # Generic decimal number
+        ]
+        
+        # Look for currency indicators
+        currency_indicators = {
+            '$': 'USD', '£': 'GBP', '€': 'EUR', '¥': 'JPY', '₹': 'INR',
+            'usd': 'USD', 'gbp': 'GBP', 'eur': 'EUR', 'jpy': 'JPY', 'inr': 'INR',
+            'dollar': 'USD', 'pound': 'GBP', 'euro': 'EUR', 'yen': 'JPY', 'rupee': 'INR'
+        }
+        
+        for pattern in amount_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            if matches:
+                for match in matches:
+                    try:
+                        if isinstance(match, tuple) and len(match) == 2:
+                            first, second = match
+                            # Check which one is the number
+                            if first.replace(',', '').replace('.', '').isdigit():
+                                # First is amount, second is currency
+                                form_data["total_amount"] = float(first.replace(',', ''))
+                                form_data["currency"] = second.upper()
+                            elif second.replace(',', '').replace('.', '').isdigit():
+                                # First is currency, second is amount
+                                form_data["currency"] = first.upper()
+                                form_data["total_amount"] = float(second.replace(',', ''))
+                        else:
+                            # Single match (just amount)
+                            amount_str = match if isinstance(match, str) else str(match)
+                            amount_clean = amount_str.replace(',', '').strip()
+                            form_data["total_amount"] = float(amount_clean)
+                        break
+                    except (ValueError, IndexError):
+                        continue
+                if form_data["total_amount"]:
+                    break
+        
+        # Try to detect currency from symbols in text if not found
+        if not form_data["currency"]:
+            for symbol, currency in currency_indicators.items():
+                if symbol in text_lower:
+                    form_data["currency"] = currency
+                    break
+        
+        # Default currency if none detected
+        if not form_data["currency"]:
+            form_data["currency"] = "USD"  # Default to USD
+        
+        # Extract Remarks
+        remarks_patterns = [
+            r'remarks[\s:]*([^\n\r]+)',
+            r'notes[\s:]*([^\n\r]+)',
+            r'comment[\s:]*([^\n\r]+)',
+            r'memo[\s:]*([^\n\r]+)'
+        ]
+        
+        for pattern in remarks_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                form_data["remarks"] = match.group(1).strip()
+                break
+        
+        return form_data
+    
+    def process_expense_receipt(self, image_path: str) -> Dict[str, Any]:
+        """Process expense receipt and extract form-specific data"""
         try:
-            # Extract text
+            # Extract text from image
             text = self.extract_text_from_image(image_path)
             
             if not text:
                 return {
                     "success": False,
                     "error": "Could not extract text from image",
-                    "confidence": 0.0
+                    "confidence": 0.0,
+                    "form_data": {}
                 }
             
-            # Extract information
-            amount = self.extract_amount(text)
-            date = self.extract_date(text)
-            merchant_name = self.extract_merchant_name(text)
-            category = self.categorize_expense(text, merchant_name)
+            # Extract form-specific data
+            form_data = self.extract_expense_form_data(text)
             
-            # Calculate confidence based on extracted data
+            # Calculate confidence based on extracted fields
             confidence = 0.0
-            if amount is not None:
-                confidence += 0.4
-            if date is not None:
-                confidence += 0.3
-            if merchant_name is not None:
-                confidence += 0.2
-            if category != "Other":
-                confidence += 0.1
+            total_fields = 7  # Total number of form fields
+            filled_fields = 0
+            
+            for field, value in form_data.items():
+                if value is not None and str(value).strip():
+                    filled_fields += 1
+                    if field == "total_amount":
+                        confidence += 0.3  # Amount is most important
+                    elif field == "expense_date":
+                        confidence += 0.2  # Date is second most important
+                    elif field == "description":
+                        confidence += 0.2  # Description is important
+                    else:
+                        confidence += 0.1  # Other fields
+            
+            # Normalize confidence to 0-1 range
+            confidence = min(confidence, 1.0)
             
             return {
                 "success": True,
-                "amount": amount,
-                "date": date,
-                "merchant_name": merchant_name,
-                "category": category,
-                "description": merchant_name or "Expense",
+                "form_data": form_data,
                 "raw_text": text,
-                "confidence": confidence
+                "confidence": confidence,
+                "fields_extracted": filled_fields,
+                "total_fields": total_fields
             }
             
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "confidence": 0.0
+                "confidence": 0.0,
+                "form_data": {}
             }
 
 ocr_service = OCRService()

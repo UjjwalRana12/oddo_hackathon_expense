@@ -16,8 +16,18 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://username:password@hostname:5432/expense_system"
     
     # Security
-    allowed_origins: List[str] = ["https://yourdomain.com", "https://www.yourdomain.com"]
-    allowed_hosts: List[str] = ["yourdomain.com", "www.yourdomain.com", "localhost"]
+    allowed_origins: str = "https://yourdomain.com,https://www.yourdomain.com"
+    allowed_hosts: str = "yourdomain.com,www.yourdomain.com,localhost"
+    
+    @property
+    def allowed_origins_list(self) -> List[str]:
+        if self.allowed_origins == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.allowed_origins.split(',')]
+    
+    @property  
+    def allowed_hosts_list(self) -> List[str]:
+        return [host.strip() for host in self.allowed_hosts.split(',')]
     
     # External APIs
     countries_api_url: str = "https://restcountries.com/v3.1/all?fields=name,currencies"
@@ -58,7 +68,8 @@ class DevelopmentSettings(Settings):
     debug: bool = True
     environment: str = "development"
     database_url: str = "sqlite:///./expense_system.db"
-    allowed_origins: List[str] = ["*"]
+    allowed_origins: str = "*"
+    allowed_hosts: str = "localhost,127.0.0.1"
     log_level: str = "DEBUG"
 
 def get_settings():

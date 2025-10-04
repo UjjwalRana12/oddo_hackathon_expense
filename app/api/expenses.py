@@ -117,20 +117,140 @@ async def upload_receipt_with_ocr(
         # Save file
         await save_upload_file(file, file_path)
         
-        # Process with OCR
-        ocr_result = ocr_service.process_receipt(file_path)
+        # Process with OCR to extract expense form data
+        ocr_result = ocr_service.process_expense_receipt(file_path)
         
-        # Return OCR results with file path
+        # Return OCR results with file path and form data
         return {
             "message": "Receipt uploaded and processed successfully",
             "file_path": file_path,
-            "ocr_result": ocr_result
+            "ocr_result": ocr_result,
+            "extracted_fields": ocr_result.get("form_data", {}),
+            "confidence": ocr_result.get("confidence", 0.0),
+            "suggestions": {
+                "description": ocr_result.get("form_data", {}).get("description", ""),
+                "amount": ocr_result.get("form_data", {}).get("total_amount", 0.0),
+                "currency": ocr_result.get("form_data", {}).get("currency", "USD"),
+                "date": ocr_result.get("form_data", {}).get("expense_date", ""),
+                "category": ocr_result.get("form_data", {}).get("category", "Other"),
+                "remarks": ocr_result.get("form_data", {}).get("remarks", "")
+            }
         }
         
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Error processing receipt: {str(e)}"
+        )
+
+@router.post("/process-expense-form", response_model=dict)
+async def process_expense_form_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Process expense form image and extract all form fields
+    Specifically designed for expense forms with fields:
+    - Description
+    - Expense Date
+    - Category 
+    - Paid By
+    - Total Amount (with currency)
+    - Remarks
+    """
+    # Validate file
+    allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/bmp", "image/tiff"]
+    if not validate_file_type(file, allowed_types):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Only image files are allowed."
+        )
+    
+    if not validate_file_size(file):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {settings.max_file_size} bytes."
+        )
+    
+    try:
+        # Generate unique filename
+        unique_filename = generate_unique_filename(file.filename)
+        file_path = os.path.join(settings.upload_dir, unique_filename)
+        
+        # Save file
+        await save_upload_file(file, file_path)
+        
+        # Process expense form with OCR
+        form_result = ocr_service.process_expense_receipt(file_path)
+        
+        if not form_result.get("success", False):
+            return {
+                "success": False,
+                "message": "Failed to process expense form",
+                "error": form_result.get("error", "Unknown error"),
+                "file_path": file_path
+            }
+        
+        form_data = form_result.get("form_data", {})
+        
+        # Get available categories for suggestions
+        categories = db.query(ExpenseCategory).filter(
+            ExpenseCategory.company_id == current_user.company_id,
+            ExpenseCategory.is_active == True
+        ).all()
+        
+        category_suggestions = [cat.name for cat in categories]
+        
+        # Format response with extracted data
+        response = {
+            "success": True,
+            "message": "Expense form processed successfully",
+            "file_path": file_path,
+            "confidence": form_result.get("confidence", 0.0),
+            "fields_extracted": form_result.get("fields_extracted", 0),
+            "total_fields": form_result.get("total_fields", 7),
+            "extracted_data": {
+                "description": form_data.get("description", ""),
+                "expense_date": form_data.get("expense_date", ""),
+                "category": form_data.get("category", ""),
+                "paid_by": form_data.get("paid_by", ""),
+                "total_amount": form_data.get("total_amount", 0.0),
+                "currency": form_data.get("currency", "USD"),
+                "remarks": form_data.get("remarks", "")
+            },
+            "suggestions": {
+                "available_categories": category_suggestions,
+                "suggested_category": form_data.get("category", "Other"),
+                "currency_detected": form_data.get("currency", "USD")
+            },
+            "raw_text": form_result.get("raw_text", ""),
+            "processing_tips": [
+                "Review extracted amounts for accuracy",
+                "Verify date format matches your requirements", 
+                "Check category assignment",
+                "Confirm currency is correct"
+            ]
+        }
+        
+        # Add validation warnings
+        warnings = []
+        if not form_data.get("total_amount") or form_data.get("total_amount") <= 0:
+            warnings.append("Amount not detected or invalid")
+        if not form_data.get("description"):
+            warnings.append("Description not found")
+        if not form_data.get("expense_date"):
+            warnings.append("Date not detected")
+            
+        if warnings:
+            response["warnings"] = warnings
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing expense form: {str(e)}"
         )
 
 @router.post("/create-from-ocr", response_model=ExpenseSchema)
