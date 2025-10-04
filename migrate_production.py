@@ -58,7 +58,7 @@ def create_database_schema(engine):
 def create_initial_data(engine):
     """Create initial data for production"""
     from sqlalchemy.orm import sessionmaker
-    from app.models.models import Company, User, ExpenseCategory
+    from app.models.models import Company, User, Category, UserRole
     from app.core.security import get_password_hash
     
     SessionLocal = sessionmaker(bind=engine)
@@ -75,9 +75,8 @@ def create_initial_data(engine):
         # Create default company
         company = Company(
             name="Default Company",
-            address="123 Business Street",
-            contact_email="admin@company.com",
-            phone="+1-555-0123"
+            country="US",
+            currency="USD"
         )
         db.add(company)
         db.flush()
@@ -85,10 +84,10 @@ def create_initial_data(engine):
         # Create admin user
         admin_user = User(
             email="admin@company.com",
-            username="admin",
-            full_name="System Administrator",
+            first_name="System",
+            last_name="Administrator",
             hashed_password=get_password_hash("admin123"),
-            role="admin",
+            role=UserRole.ADMIN,
             company_id=company.id,
             is_active=True
         )
@@ -97,7 +96,7 @@ def create_initial_data(engine):
         # Create default expense categories
         categories = [
             "Travel",
-            "Meals & Entertainment",
+            "Meals & Entertainment", 
             "Office Supplies",
             "Training & Education",
             "Software & Subscriptions",
@@ -109,10 +108,11 @@ def create_initial_data(engine):
         ]
         
         for category_name in categories:
-            category = ExpenseCategory(
+            category = Category(
                 name=category_name,
                 description=f"Default category for {category_name.lower()} expenses",
-                company_id=company.id
+                company_id=company.id,
+                is_active=True
             )
             db.add(category)
         
