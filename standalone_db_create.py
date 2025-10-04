@@ -1,14 +1,15 @@
 """
-Standalone database creation script for MySQL
+Universal database creation script (SQLite/PostgreSQL/MySQL)
 """
 import os
-import sys
 from sqlalchemy import create_engine, inspect
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, Enum as SQLEnum
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
+
+# Use environment variable or fallback
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./expense_system.db")
 
 # Create base
 Base = declarative_base()
@@ -129,79 +130,35 @@ class Category(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-def test_mysql_connection():
-    """Test MySQL connection first"""
-    try:
-        import pymysql
-        
-        print("🔌 Testing MySQL connection...")
-        
-        connection = pymysql.connect(
-            host="127.0.0.1",
-            user="root",
-            password="123@Ujjwal",  # Use actual password, not URL encoded
-            port=3306
-        )
-        
-        print("✅ MySQL connection successful!")
-        
-        # Test if we can create database
-        cursor = connection.cursor()
-        cursor.execute("CREATE DATABASE IF NOT EXISTS expense_system CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-        cursor.execute("SHOW DATABASES LIKE 'expense_system'")
-        
-        if cursor.fetchone():
-            print("✅ Database 'expense_system' is ready")
-        else:
-            print("❌ Failed to create database")
-            return False
-            
-        connection.close()
-        return True
-        
-    except ImportError:
-        print("❌ PyMySQL not installed. Run: pip install pymysql")
-        return False
-    except Exception as e:
-        print(f"❌ MySQL connection failed: {str(e)}")
-        print("\n💡 Troubleshooting:")
-        print("1. Check if MySQL server is running")
-        print("2. Verify username and password")
-        print("3. Check if MySQL is listening on port 3306")
-        print("4. Try connecting with MySQL Workbench or command line")
-        return False
+def get_engine():
+    """Create appropriate engine based on DATABASE_URL"""
+    if DATABASE_URL.startswith("postgresql"):
+        # PostgreSQL (Render)
+        engine = create_engine(DATABASE_URL, echo=False)
+        print("🐘 Using PostgreSQL database")
+    elif DATABASE_URL.startswith("mysql"):
+        # MySQL
+        engine = create_engine(DATABASE_URL, echo=False)
+        print("🐬 Using MySQL database")
+    else:
+        # SQLite (local development)
+        engine = create_engine(DATABASE_URL, echo=False)
+        print("📁 Using SQLite database")
+    
+    return engine
 
 def create_database():
-    """Create all database tables in MySQL"""
+    """Create all database tables"""
     try:
-        # First test connection
-        if not test_mysql_connection():
-            return False
+        print(f"🔌 Connecting to database...")
+        print(f"📊 URL: {DATABASE_URL[:50]}...")  # Don't show full URL for security
         
-        # MySQL Database Configuration (matches your .env file)
-        DB_HOST = "127.0.0.1"
-        DB_USER = "root"
-        DB_PASSWORD = "123@Ujjwal"
-        DB_NAME = "expense_system"  # ✅ Now matches your .env file
-        DB_PORT = 3306
-        
-        # Create MySQL connection URL with proper encoding
-        DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD.replace('@', '%40')}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        
-        print(f"\n🗄️ Creating tables in database...")
-        print(f"📊 Host: {DB_HOST}")
-        print(f"👤 User: {DB_USER}")
-        print(f"🗄️ Database: {DB_NAME}")
-        
-        # Create engine
-        engine = create_engine(DATABASE_URL, echo=False)  # Set echo=True to see SQL commands
+        engine = get_engine()
         
         print("🔨 Creating database tables...")
-        
-        # Create all tables
         Base.metadata.create_all(bind=engine)
         
-        # Verify tables were created
+        # Verify tables
         inspector = inspect(engine)
         tables = inspector.get_table_names()
         
@@ -209,23 +166,14 @@ def create_database():
         for table in sorted(tables):
             print(f"   • {table}")
         
-        print(f"\n🎉 MySQL database setup completed!")
-        print(f"📊 Database: {DB_NAME}")
-        print(f"🔗 Connection: {DB_HOST}:{DB_PORT}")
-        print("You can now run the application with: python main.py")
-        
+        print(f"\n🎉 Database setup completed!")
         return True
         
     except Exception as e:
         print(f"❌ Error creating database: {str(e)}")
-        print("\n💡 If this keeps failing, try:")
-        print("1. Start MySQL service manually")
-        print("2. Check MySQL is running on port 3306")
-        print("3. Use SQLite temporarily: DATABASE_URL=sqlite:///./expense_system.db")
         return False
 
 if __name__ == "__main__":
-    print("🚀 MySQL Database Setup for Expense Management System")
-    print("=" * 60)
-    
+    print("🚀 Universal Database Setup")
+    print("=" * 50)
     create_database()
