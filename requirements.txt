@@ -31,3 +31,8 @@ pytest-asyncio
 # Production dependencies
 gunicorn
 prometheus-client
+pymysql
+pydantic[email]
+pydantic-settings
+uvicorn
+pyjwt
